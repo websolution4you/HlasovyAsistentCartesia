@@ -19,7 +19,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // 2. TWILIO WEBHOOK (KEĎ NIEKTO ZAVOLÁ NA VAŠE ČÍSLO)
 // ==========================================
 // Twilio urobí POST request na túto URL vždy, keď niekto zavolá na vaše telefónne číslo.
-app.post('/twiml', (req, res) => {
+app.post('/twilio/voice', (req, res) => {
     console.log('Prišiel nový hovor z Twilia!');
     
     // Dynamicky získame doménu (napr. z Render.com) a vytvoríme WebSocket URL
