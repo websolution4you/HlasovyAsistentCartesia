@@ -38,7 +38,10 @@ app.post('/twilio/voice', (req, res) => {
         return res.send(errorTwiml);
     }
 
+    const callerId = process.env.TWILIO_CALLER_ID || req.body.To;
+
     console.log(`Vytáčam Cartesia číslo: ${cartesiaPhoneNumber}`);
+    console.log(`Používam callerId: ${callerId}`);
 
     // Twilio zavolá Cartesia agent číslo a premostí hovory.
     // action zavolá náš backend po skončení Dial pokusu a povie nám výsledok.
@@ -47,6 +50,7 @@ app.post('/twilio/voice', (req, res) => {
 <Response>
     <Dial
         timeout="30"
+        callerId="${callerId}"
         action="/twilio/dial-result"
         method="POST"
     >
