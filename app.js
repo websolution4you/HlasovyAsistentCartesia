@@ -112,12 +112,23 @@ wss.on('connection', (twilioWs) => {
                 streamSid = msg.start.streamSid;
                 console.log(`▶️ Začal sa Twilio Audio Stream. SID: ${streamSid}`);
                 
-                // V momente, kedy sa začne stream, otvoríme pripojenie na Cartesia AI
-                const cartesiaUrl = `wss://api.cartesia.ai/v1/agents/stream`; 
+                // V momente, kedy sa začne stream, otvoríme pripojenie na Cartesia AI.
+                // Dôležité: Cartesia Agent/Line WebSocket URL sa môže líšiť podľa produktu/účtu,
+                // preto ju nastavujeme cez Render ENV premennú CARTESIA_WS_URL.
+                const cartesiaUrl = process.env.CARTESIA_WS_URL;
+
+                if (!cartesiaUrl) {
+                    console.error('❌ Chýba CARTESIA_WS_URL v environment variables. Nastav ju v Renderi.');
+                    twilioWs.close();
+                    return;
+                }
+
+                console.log(`Pripájam sa na Cartesia WebSocket: ${cartesiaUrl}`);
                 
                 cartesiaWs = new WebSocket(cartesiaUrl, {
                     headers: {
                         'Authorization': `Bearer ${process.env.CARTESIA_API_KEY}`,
+                        'Cartesia-Version': process.env.CARTESIA_VERSION || '2025-04-16',
                         'X-Cartesia-Agent-Id': process.env.CARTESIA_AGENT_ID,
                         'X-Sample-Rate': '8000' // Twilio telefónne hovory používajú 8000Hz ulaw (PCMU)
                     }
