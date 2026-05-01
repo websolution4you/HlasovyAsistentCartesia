@@ -15,89 +15,76 @@ const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==========================================
-// 2. TWILIO WEBHOOK (KEĎ NIEKTO ZAVOLÁ NA VAŠE TWILIO ČÍSLO)
+// 2. TWILIO WEBHOOK (HLAVNÉ MENU)
 // ==========================================
-// Stabilný model: zákazník zavolá na tvoje lokálne/európske Twilio číslo
-// a Twilio hovor presmeruje na Cartesia telefónne číslo agenta.
-// Cartesia potom rieši celý voice agent hovor sama (STT/LLM/TTS).
+// Zákazník zavolá na Twilio, to pošle webhook sem na Render a my vrátime menu bez vytáčania von.
+const twilio = require('twilio');
+
 app.post('/twilio/voice', (req, res) => {
-    console.log('Prišiel nový hovor z Twilia - presmerovávam na Cartesia číslo.');
+    console.log('Prišiel nový hovor z Twilia:', {
+        CallSid: req.body.CallSid,
+        From: req.body.From,
+        To: req.body.To,
+    });
 
-    const cartesiaPhoneNumber = process.env.CARTESIA_PHONE_NUMBER;
+    const twiml = new twilio.twiml.VoiceResponse();
 
-    if (!cartesiaPhoneNumber) {
-        console.error('Chýba CARTESIA_PHONE_NUMBER v environment variables.');
+    const gather = twiml.gather({
+        numDigits: 1,
+        action: '/twilio/menu',
+        method: 'POST',
+        timeout: 10,
+    });
 
-        const errorTwiml = `
-<Response>
-    <Say language="sk-SK">Prepáčte, hlasový asistent momentálne nie je dostupný.</Say>
-    <Hangup />
-</Response>`;
+    gather.say(
+        { language: 'sk-SK' },
+        'Vitajte. Pre informácie stlačte jednotku. Pre ukončenie hovoru stlačte dvojku.'
+    );
 
-        res.type('text/xml');
-        return res.send(errorTwiml);
+    twiml.say(
+        { language: 'sk-SK' },
+        'Nezadali ste žiadnu voľbu. Dovidenia.'
+    );
+
+    twiml.hangup();
+
+    res.type('text/xml');
+    res.send(twiml.toString());
+});
+
+app.post('/twilio/menu', (req, res) => {
+    console.log('Zvolené menu:', {
+        CallSid: req.body.CallSid,
+        From: req.body.From,
+        To: req.body.To,
+        Digits: req.body.Digits,
+    });
+
+    const twiml = new twilio.twiml.VoiceResponse();
+
+    if (req.body.Digits === '1') {
+        twiml.say(
+            { language: 'sk-SK' },
+            'Zvolili ste informácie. Toto je test webhooku z Renderu. Spojenie funguje správne.'
+        );
+        // Návrat späť do hlavného menu
+        twiml.redirect({ method: 'POST' }, '/twilio/voice');
+    } else if (req.body.Digits === '2') {
+        twiml.say(
+            { language: 'sk-SK' },
+            'Ďakujeme za zavolanie. Dovidenia.'
+        );
+        twiml.hangup();
+    } else {
+        twiml.say(
+            { language: 'sk-SK' },
+            'Neplatná voľba.'
+        );
+        twiml.redirect({ method: 'POST' }, '/twilio/voice');
     }
 
-    const callerId = process.env.TWILIO_CALLER_ID || req.body.To;
-
-    console.log(`Vytáčam Cartesia číslo: ${cartesiaPhoneNumber}`);
-    console.log(`Používam callerId: ${callerId}`);
-
-    // Twilio zavolá Cartesia agent číslo a premostí hovory.
-    // action zavolá náš backend po skončení Dial pokusu a povie nám výsledok.
-    // statusCallback posiela priebežné udalosti: initiated/ringing/answered/completed.
-    const twiml = `
-<Response>
-    <Dial
-        timeout="30"
-        callerId="${callerId}"
-        action="/twilio/dial-result"
-        method="POST"
-    >
-        <Number
-            statusCallback="/twilio/dial-status"
-            statusCallbackMethod="POST"
-            statusCallbackEvent="initiated ringing answered completed"
-        >${cartesiaPhoneNumber}</Number>
-    </Dial>
-    <Say language="sk-SK">Prepáčte, hlasový asistent momentálne nie je dostupný.</Say>
-</Response>`;
-
     res.type('text/xml');
-    res.send(twiml);
-});
-
-app.post('/twilio/dial-status', (req, res) => {
-    console.log('Twilio Dial status callback:', {
-        CallSid: req.body.CallSid,
-        ParentCallSid: req.body.ParentCallSid,
-        CallStatus: req.body.CallStatus,
-        To: req.body.To,
-        From: req.body.From,
-        Direction: req.body.Direction,
-        Timestamp: req.body.Timestamp,
-    });
-
-    res.sendStatus(200);
-});
-
-app.post('/twilio/dial-result', (req, res) => {
-    console.log('Twilio Dial result:', {
-        DialCallStatus: req.body.DialCallStatus,
-        DialCallSid: req.body.DialCallSid,
-        DialCallDuration: req.body.DialCallDuration,
-        CallSid: req.body.CallSid,
-        From: req.body.From,
-        To: req.body.To,
-    });
-
-    const twiml = `
-<Response>
-    <Hangup />
-</Response>`;
-
-    res.type('text/xml');
-    res.send(twiml);
+    res.send(twiml.toString());
 });
 
 // ==========================================
