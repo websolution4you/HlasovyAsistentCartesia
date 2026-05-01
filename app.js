@@ -2,7 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
-const WebSocket = require('ws');
+const twilio = require('twilio');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -16,26 +16,20 @@ const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==========================================
-// 2. TWILIO WEBHOOK - PRIAME NAPOJENIE NA CARTESIA CEZ WEBSOCKET
+// 2. TWILIO WEBHOOK - PRESMEROVANIE NA CARTESIA AGENTA
 // ==========================================
 app.post('/twilio/voice', (req, res) => {
-    console.log('Prišiel nový hovor z Twilia:', {
+    console.log('Prišiel nový hovor z Twilia - presmerovávam na Cartesia agenta:', {
         CallSid: req.body.CallSid,
         From: req.body.From,
         To: req.body.To,
     });
 
-    const wssUrl = `wss://${req.headers.host}/media-stream`;
-
-    const twiml = `
-<Response>
-    <Connect>
-        <Stream url="${wssUrl}" />
-    </Connect>
-</Response>`;
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.dial('+19342204498');
 
     res.type('text/xml');
-    res.send(twiml);
+    res.send(twiml.toString());
 });
 
 // ==========================================
@@ -89,90 +83,11 @@ app.post('/api/uloz-objednavku', authenticateWebhook, async (req, res) => {
 });
 
 // ==========================================
-// 4. WEBSOCKET SERVER (OBOJSMERNÝ AUDIO STREAM TWILIO <-> CARTESIA)
-// ==========================================
-const server = require('http').createServer(app);
-const wss = new WebSocket.Server({ server, path: '/media-stream' });
-
-wss.on('connection', (twilioWs) => {
-    console.log('📱 Nové Twilio WebSocket pripojenie otvorené');
-    let streamSid = null;
-    let cartesiaWs = null;
-
-    twilioWs.on('message', (message) => {
-        const msg = JSON.parse(message);
-
-        switch (msg.event) {
-            case 'start':
-                streamSid = msg.start.streamSid;
-                console.log(`▶️ Začal sa Twilio Audio Stream. SID: ${streamSid}`);
-
-                const cartesiaUrl = 'wss://api.cartesia.ai/v1/agents/stream';
-
-                cartesiaWs = new WebSocket(cartesiaUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${process.env.CARTESIA_API_KEY}`,
-                        'X-Cartesia-Agent-Id': process.env.CARTESIA_AGENT_ID,
-                        'X-Sample-Rate': '8000'
-                    }
-                });
-
-                cartesiaWs.on('open', () => {
-                    console.log('✅ Úspešne pripojené na Cartesia AI WebSocket');
-                });
-
-                cartesiaWs.on('message', (cartesiaMessage) => {
-                    try {
-                        const data = JSON.parse(cartesiaMessage);
-
-                        if (data.type === 'audio' && data.payload) {
-                            twilioWs.send(JSON.stringify({
-                                event: 'media',
-                                streamSid: streamSid,
-                                media: { payload: data.payload }
-                            }));
-                        }
-                    } catch (err) {
-                        console.error('Chyba pri čítaní správy od Cartesie:', err);
-                    }
-                });
-
-                cartesiaWs.on('close', () => console.log('🛑 Cartesia WebSocket zatvorený'));
-                cartesiaWs.on('error', (err) => console.error('❌ Cartesia WebSocket chyba:', err));
-                break;
-
-            case 'media':
-                if (cartesiaWs && cartesiaWs.readyState === WebSocket.OPEN) {
-                    cartesiaWs.send(JSON.stringify({
-                        type: 'audio',
-                        payload: msg.media.payload
-                    }));
-                }
-                break;
-
-            case 'stop':
-                console.log('⏹️ Hovor ukončený');
-                if (cartesiaWs && cartesiaWs.readyState === WebSocket.OPEN) {
-                    cartesiaWs.close();
-                }
-                break;
-        }
-    });
-
-    twilioWs.on('close', () => {
-        console.log('📱 Twilio WebSocket odpojený');
-        if (cartesiaWs && cartesiaWs.readyState === WebSocket.OPEN) {
-            cartesiaWs.close();
-        }
-    });
-});
-
-// ==========================================
-// 5. SPUSTENIE SERVERA (Pre Render.com)
+// 4. SPUSTENIE SERVERA (Pre Render.com)
 // ==========================================
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-    console.log(`🚀 API + WebSocket Server beží na porte ${PORT}`);
+app.listen(PORT, () => {
+    console.log(`🚀 API Server beží na porte ${PORT}`);
     console.log('Twilio voice webhook: /twilio/voice');
     console.log('Cartesia order webhook: /api/uloz-objednavku');
 });
