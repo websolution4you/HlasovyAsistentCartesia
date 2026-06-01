@@ -7,3 +7,12 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 .vscode/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
